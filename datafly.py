@@ -1,5 +1,6 @@
 import argparse
 import csv
+from itertools import count
 import sys
 from datetime import datetime
 from io import StringIO
@@ -60,10 +61,15 @@ class _Table:
                     count += currTup[1]
 
             return count
+
+    # return the attribute with more distinct values
+    def compute_attr(self, qi_names, table):
+        dict = {} # maps attribute and distinct values
+        count = 0
+
+        for qi in qi_names:
             
-    def compute_attr(self, table)
-    # attr = the attribute with more distinct values
-                attr = self.
+            
 
     def anonymize(self, qi_names: list, k: int, output_path: str, v=True):
 
@@ -134,7 +140,7 @@ class _Table:
             #  if count > k i have to go on
             while self.compute_count(qi_frequency, k) > k:
                 # attr = the attribute with more distinct values
-                attr = self.compute_attr(self.table)
+                attr = self.compute_attr(qi_names, self.table)
                 # generalize attr
                 # group the rows that are identical
 
