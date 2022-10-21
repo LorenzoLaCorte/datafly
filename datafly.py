@@ -64,11 +64,18 @@ class _Table:
 
     # return the attribute with more distinct values
     def compute_attr(self, qi_names, table):
-        dict = {} # maps attribute and distinct values
-        count = 0
+        dictAttr = {} # maps attribute and distinct values
+        attrSet = set()
 
         for qi in qi_names:
+            for row in table:
+                attrSet.add(table.iloc[row, qi])
             
+            dict[qi] = len(attrSet)
+
+        return max(dictAttr, key=dictAttr.get)
+        
+
             
 
     def anonymize(self, qi_names: list, k: int, output_path: str, v=True):
