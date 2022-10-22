@@ -1,6 +1,5 @@
 import argparse
 import csv
-from itertools import count
 import sys
 from datetime import datetime
 from io import StringIO
@@ -54,14 +53,6 @@ class _Table:
 
         self.table.close()
 
-    def compute_count(self, freq, k):
-            count=0
-            for currTup in freq.values():
-                if currTup[1] < k:
-                    count += currTup[1]
-
-            return count
-
     def anonymize(self, qi_names: list, k: int, output_path: str, v=True):
 
         """
@@ -99,6 +90,8 @@ class _Table:
         qi_frequency = dict()
 
         self._debug("[DEBUG] Instantiating the attributes domains dictionary...", _DEBUG)
+        # Dictionary whose keys are the indices in the QI attribute names list, and whose values are
+        # sets containing the corresponding domain elements:
         domains = dict()
         for i, attribute in enumerate(qi_names):
             domains[i] = set()
@@ -109,38 +102,70 @@ class _Table:
         for i, attribute in enumerate(qi_names):
             gen_levels[i] = 0
 
-        # 1. build a frequency dict freq with quasi identifier where
-        # key = distinct values of PT[QI]
-        # value = number of occurrences of each combination of values        
-        for idx, row in enumerate(self.table):
-            qi_sequence = self._get_values(row, list(qi_names), idx)
-            if not qi_sequence: continue
-            if tuple(qi_sequence) in qi_frequency:
-                currTup = qi_frequency[tuple(qi_sequence)]
-                currList = currTup[0].append(idx)
-                qi_frequency[tuple(qi_sequence)] = tuple([currList, currTup[1]+1])
+        
+        for i, row in enumerate(self.table):
+            # i = index row
+            # row value
+            qi_sequence = self._get_values(row, qi_names, i)
 
+            # Skip if this row must be ignored:
+            if qi_sequence is None:
+                self._debug("[DEBUG] Ignoring row %d with values '%s'..." % (i, row.strip()),
+                            _DEBUG)
+                continue
             else:
-                qi_frequency[tuple(qi_sequence)] = tuple([[idx], 1])
+                qi_sequence = tuple(qi_sequence)
+
+            if qi_sequence in qi_frequency:
+                occurrences = qi_frequency[qi_sequence][0] + 1 # add occurence of qi_sequence
+                rows_set = qi_frequency[qi_sequence][1].union([i]) # add index
+                qi_frequency[qi_sequence] = (occurrences, rows_set) # update value
+            else:
+                # Initialize number of occurrences and set of row indices:
+                qi_frequency[qi_sequence] = (1, set())
+                qi_frequency[qi_sequence][1].add(i)
+
                 # Update domain set for each attribute in this sequence:
                 for j, value in enumerate(qi_sequence):
                     domains[j].add(value)
-                
-        # 2. considering all rows and their values, if there's a value < k add it to count
-        # and if count > k i have to go on
-        while self.compute_count(qi_frequency, k) > k:        
-            # Get the attribute whose domain has the max cardinality:
-            max_cardinality, max_attribute_idx = 0, None
 
-            for attribute_idx in domains:
-                if len(domains[attribute_idx]) > max_cardinality:
-                    max_cardinality = len(domains[attribute_idx])
-                    max_attribute_idx = attribute_idx
+            self._log("[LOG] Read line %d from the input file." % i, endl=False, enabled=v)
+
+        self._log('', endl=True, enabled=v)
+
+        while True:
+
+            # Number of tuples which are not k-anonymous.
+            count = 0
+
+            for qi_sequence in qi_frequency:
+
+                # Check number of occurrences of this sequence:
+                if qi_frequency[qi_sequence][0] < k:
+                    # Update the number of tuples which are not k-anonymous:
+                    count += qi_frequency[qi_sequence][0]
+            self._debug("[DEBUG] %d tuples are not yet k-anonymous..." % count, _DEBUG)
+            self._log("[LOG] %d tuples are not yet k-anonymous..." % count, endl=True, enabled=v)
+
+            # Limit the number of tuples to suppress to k:
+            if count > k:
+
+                # Get the attribute whose domain has the max cardinality:
+                max_cardinality, max_attribute_idx = 0, None
+                for attribute_idx in domains:
+                    if len(domains[attribute_idx]) > max_cardinality:
+                        max_cardinality = len(domains[attribute_idx])
+                        max_attribute_idx = attribute_idx
 
                 # Index of the attribute to generalize:
                 attribute_idx = max_attribute_idx
+                self._debug("[DEBUG] Attribute with most distinct values is '%s'..." %
+                            qi_names[attribute_idx], _DEBUG)
+                self._log("[LOG] Current attribute with most distinct values is '%s'." %
+                          qi_names[attribute_idx], endl=True, enabled=v)
 
-                # Generalize each value for that attribute and update the attribute set in the domains dictionary:
+                # Generalize each value for that attribute and update the attribute set in the
+                # domains dictionary:
                 domains[attribute_idx] = set()
                 # Look up table for the generalized values, to avoid searching in hierarchies:
                 generalizations = dict()
@@ -149,39 +174,55 @@ class _Table:
                 # and it can't be used an iterator:
                 for j, qi_sequence in enumerate(list(qi_frequency)):
 
+                    self._log("[LOG] Generalizing attribute '%s' for sequence %d..." %
+                              (qi_names[attribute_idx], j), endl=False, enabled=v)
+
                     # Get the generalized value:
                     if qi_sequence[attribute_idx] in generalizations:
                         # Find directly the generalized value in the look up table:
                         generalized_value = generalizations[attribute_idx]
                     else:
+                        self._debug(
+                            "[DEBUG] Generalizing value '%s'..." % qi_sequence[attribute_idx],
+                            _DEBUG)
                         # Get the corresponding generalized value from the attribute DGH:
                         try:
-                            generalized_value = self.dghs[qi_names[attribute_idx]].generalize(qi_sequence[attribute_idx],gen_levels[attribute_idx]) 
+                            generalized_value = self.dghs[qi_names[attribute_idx]]\
+                                .generalize(
+                                qi_sequence[attribute_idx],
+                                gen_levels[attribute_idx]) 
                         except KeyError as error:
+                            self._log('', endl=True, enabled=True)
+                            self._log("[ERROR] Value '%s' is not in hierarchy for attribute '%s'."
+                                      % (error.args[0], qi_names[attribute_idx]),
+                                      endl=True, enabled=True)
                             output.close()
                             return
 
-                        # Skip if it's a hierarchy root:    
-                        if generalized_value is None: continue
+                        if generalized_value is None:
+                            # Skip if it's a hierarchy root:
+                            continue
 
                         # Add to the look up table:
                         generalizations[attribute_idx] = generalized_value
 
-                    # Update the tuples with generalized value
+                    # Tuple with generalized value:
                     new_qi_sequence = list(qi_sequence)
                     new_qi_sequence[attribute_idx] = generalized_value
                     new_qi_sequence = tuple(new_qi_sequence)
                     
-                    # Check if there is already a tuple like this one and update it
+                    # Check if there is already a tuple like this one:
                     if new_qi_sequence in qi_frequency:
-                        occurrences = qi_frequency[new_qi_sequence][0] + qi_frequency[qi_sequence][0]
-
-                        rows_set = qi_frequency[new_qi_sequence][1].union(qi_frequency[qi_sequence][1])
+                        # Update the already existing one:
+                        # Update the number of occurrences:
+                        occurrences = qi_frequency[new_qi_sequence][0] \
+                                      + qi_frequency[qi_sequence][0]
+                        # Unite the row indices sets:
+                        rows_set = qi_frequency[new_qi_sequence][1]\
+                            .union(qi_frequency[qi_sequence][1])
                         qi_frequency[new_qi_sequence] = (occurrences, rows_set)
-                        
                         # Remove the old sequence:
                         qi_frequency.pop(qi_sequence)
-                    
                     else:
                         # Add new tuple and remove the old one:
                         qi_frequency[new_qi_sequence] = qi_frequency.pop(qi_sequence)
@@ -189,33 +230,54 @@ class _Table:
                     # Update domain set with this attribute value:
                     domains[attribute_idx].add(qi_sequence[attribute_idx])
 
+                self._log('', endl=True, enabled=v)
+
                 # Update current level of generalization:
                 gen_levels[attribute_idx] += 1
 
-        # 3. delete rows with occurences less than k
-        # Drop tuples which occur less than k times:
-        for qi_sequence, data in qi_frequency.items():
-            if data[0] < k:
-                qi_frequency.pop(qi_sequence)
+                self._log("[LOG] Generalized attribute '%s'. Current generalization level is %d." %
+                          (qi_names[attribute_idx], gen_levels[attribute_idx]), endl=True,
+                          enabled=v)
 
-        # 4. Updating and publishing the anonymized table
-        self.table.seek(0)
+            else:
 
-        for i, row in enumerate(self.table):
-            table_row = self._get_values(row, list(self.attributes), i)
-            if table_row is None: continue
+                self._debug("[DEBUG] Suppressing max k non k-anonymous tuples...")
+                # Drop tuples which occur less than k times:
+                for qi_sequence, data in qi_frequency.items():
+                    if data[0] < k:
+                        qi_frequency.pop(qi_sequence)
+                self._log("[LOG] Suppressed %d tuples." % count, endl=True, enabled=v)
 
-            # Find sequence corresponding to this row index:
-            for qi_sequence in qi_frequency:
-                if i in qi_frequency[qi_sequence][1]:
-                    line = self._set_values(table_row, qi_sequence, qi_names)
-                    print(line, file=output, end="")
+                # Start to read the table file from the start:
+                self.table.seek(0)
+
+                self._debug("[DEBUG] Writing the anonymized table...", _DEBUG)
+                self._log("[LOG] Writing anonymized table...", endl=True, enabled=v)
+                for i, row in enumerate(self.table):
+
+                    self._debug("[DEBUG] Reading row %d from original table..." % i, _DEBUG)
+                    table_row = self._get_values(row, list(self.attributes), i)
+
+                    # Skip this row if it must be ignored:
+                    if table_row is None:
+                        self._debug("[DEBUG] Skipped reading row %d from original table..." % i,
+                                    _DEBUG)
+                        continue
+
+                    # Find sequence corresponding to this row index:
+                    for qi_sequence in qi_frequency:
+                        if i in qi_frequency[qi_sequence][1]:
+                            line = self._set_values(table_row, qi_sequence, qi_names)
+                            self._debug("[DEBUG] Writing line %d from original table to anonymized "
+                                        "table..." % i, _DEBUG)
+                            print(line, file=output, end="")
+                            break
+
+                break
 
         output.close()
 
         self._log("[LOG] All done.", endl=True, enabled=v)
-
-    
 
     @staticmethod
     def _log(content, enabled=True, endl=True):
