@@ -1,7 +1,7 @@
 # Python Datafly
 
-## Bugs Founded:
-- in line 207 pop inside a for
+## Bugs Founded in prof. solutions:
+- in line 248 pop inside a for
 - occurences and list always inverted??
 
 ## Lessons Learned
