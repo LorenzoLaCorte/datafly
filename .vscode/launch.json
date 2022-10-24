@@ -11,7 +11,7 @@
             "program": "${file}",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args": ["-pt", "example/db_100.csv", "-qi", "'age' 'city_birth' 'zip_code'", "-dgh", "example/age_generalization.csv", "example/city_birth_generalization.csv", "example/zip_code_generalization.csv", "-k", "3", "-o", "example/db_100_3_anon.csv"]
+            "args": ["-pt", "example/db_100.csv", "-qi", "age", "city_birth", "zip_code", "-dgh", "example/age_generalization.csv", "example/city_birth_generalization.csv", "example/zip_code_generalization.csv", "-k", "50", "-o", "example/db_100_3_anon.csv"]
         }
     ]
 }
