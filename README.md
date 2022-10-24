@@ -1,5 +1,17 @@
 # Python Datafly
 
+## Bugs Founded:
+- in line 207 pop inside a for
+- occurences and list always inverted??
+
+## Lessons Learned
+- always use pandas
+- debbuger with args:
+insert "args" in .json of the debugger and then start debugging with F5
+- using of sets to count unique values is super-efficient
+- using a pop into a for can be very risky
+- create a debug function, only working if _DEBUG = True
+
 ## Usage
 
 Use the `--help` command to show the help message:
